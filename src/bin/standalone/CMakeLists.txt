@@ -16,6 +16,8 @@ SET(tgtdep_default int_hm_seq int_ht_seq stinger_core stinger_utils rt string)
 SET(tgtdep_protobuf_test protobuf)
 SET(tgtdep_depold_community int_hm_seq int_ht_seq)
 
+unset(METIS CACHE)
+
 #################################################################
 # Iterate over each project and build appropriately based on type
 FILE(GLOB subs RELATIVE ${CMAKE_CURRENT_LIST_DIR} ${CMAKE_CURRENT_LIST_DIR}/*)
@@ -30,6 +32,10 @@ FOREACH(subdir ${subs})
       FILE(GLOB cxx_srcs ${CMAKE_CURRENT_LIST_DIR}/${subdir}/*.cc)
       FILE(GLOB src ${CMAKE_CURRENT_LIST_DIR}/${subdir}/src/*)
       INCLUDE_DIRECTORIES(${subdir})
+#      INCLUDE_DIRECTORIES(/usr/local/include)
+      include_directories(/usr/local/include)
+      include_directories(/usr/include/mpi)
+
       MESSAGE("source files:${srcs} ${cxx_srcs} ${src}")
       ADD_EXECUTABLE(stinger_${subdir} ${srcs} ${cxx_srcs} ${src})
 
@@ -41,6 +47,19 @@ FOREACH(subdir ${subs})
 	ADD_DEPENDENCIES(stinger_${subdir} ${dep_library})
       ENDFOREACH()
       TARGET_LINK_LIBRARIES(stinger_${subdir} ${libdep_${subdir}})
+
+		FIND_FILE(METIS libmtmetis.a /usr/local/lib)
+		MESSAGE(${METIS})
+
+		IF (METIS)
+		      TARGET_LINK_LIBRARIES(stinger_${subdir} libmtmetis.a)			
+			  link_directories(/usr/local/lib)
+			MESSAGE("HELLO")
+		ENDIF (METIS)
+		IF(NOT METIS)
+		  MESSAGE(SEND_ERROR "Cannot find library xxxxlib.so")
+		ENDIF(NOT METIS)
+
 
       #IF(DEFINED ${libdep_${subdir}})
 	#ADD_DEPENDENCIES(${subdir} ${libdep_${subdir}})
@@ -56,3 +75,4 @@ FOREACH(subdir ${subs})
     ENDIF()
   ENDIF()
 ENDFOREACH()
+
