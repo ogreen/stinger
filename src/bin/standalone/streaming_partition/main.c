@@ -47,19 +47,6 @@ static struct stinger * S;
 static double * update_time_trace;
 
 
-void partitionStinger(struct stinger* GSting, const  int64_t nv,const  int64_t numPart, int64_t* verPartitionArray){
-
-  int64_t * off;
-  int64_t * ind;
-  int64_t * weight;
-  int64_t nv_=nv;
-  int64_t numPart_=numPart;
-  stinger_to_unsorted_csr (GSting, nv, (int64_t**)&off, (int64_t**)&ind, (int64_t**)&weight,NULL, NULL, NULL);
-
-  mtmetis_vtx_t *xadj=(mtmetis_vtx_t*)off;
-  mtmetis_adj_t *adjncy=(mtmetis_adj_t*)ind; 
-  mtmetis_vtx_t ncon=1;
-  mtmetis_vtx_t objval;
 /*
   idx_t options[METIS_NOPTIONS];
   METIS_SetDefaultOptions(options);
@@ -74,17 +61,63 @@ void partitionStinger(struct stinger* GSting, const  int64_t nv,const  int64_t n
 //  int temp= METIS_PartGraphKway(&nv_, &ncon, xadj, adjncy,  NULL, NULL, NULL, 
 //    &numPart_, NULL, NULL, options, &objval, verPartitionArray);
 
-int temp= mtmetis_partkway(
+//int temp= mtmetis_partkway(
+    // nv, 
+    // xadj, 
+    // adjncy, 
+    // NULL, 
+    // NULL,
+    // numPart_, 
+    // (mtmetis_pid_t*)verPartitionArray, 
+    // NULL);
+
+
+void partitionStinger(struct stinger* GSting, const  int64_t nv,const  int64_t numPart, int64_t* verPartitionArray){
+
+  int64_t * off;
+  int64_t * ind;
+  int64_t * weight;
+  int64_t nv_=nv;
+  int64_t numPart_=numPart;
+  stinger_to_unsorted_csr (GSting, nv+1, (int64_t**)&off, (int64_t**)&ind, (int64_t**)&weight,NULL, NULL, NULL);
+
+
+  mtmetis_vtx_t *xweight= (mtmetis_vtx_t*)malloc((nv+1)*sizeof(mtmetis_vtx_t));
+  for(int v=0;v<nv; v++)
+    xweight[v]=1;
+
+  mtmetis_vtx_t *xadj=(mtmetis_vtx_t*)off;
+  mtmetis_adj_t *adjncy=(mtmetis_adj_t*)ind; 
+
+  printf("\nnumber of vertices and edges: %ld and %ld \n",nv, xadj[nv+1]);
+
+  double* options=mtmetis_init_options();
+
+  options[MTMETIS_OPTION_NPARTS]=numPart;
+//  options[MTMETIS_OPTION_CTYPE]=MTMETIS_CTYPE_SHEM;
+  options[MTMETIS_OPTION_PTYPE]=MTMETIS_PTYPE_KWAY;
+//  options[MTMETIS_OPTION_CONTYPE]=MTMETIS_CONTYPE_SORT;
+//  options[MTMETIS_OPTION_RTYPE]=MTMETIS_RTYPE_GREEDY;
+//  options[MTMETIS_OPTION_VERBOSITY]=MTMETIS_VERBOSITY_LOW;
+
+//  options[MTMETIS_OPTION_NRUNS]=10;
+//  options[MTMETIS_OPTION_NITER]=10;
+
+//  options[MTMETIS_OPTION_IGNORE]=MTMETIS_IGNORE_VERTEXWEIGHTS+MTMETIS_IGNORE_EDGEWEIGHTS;
+  
+int temp= mtmetis_partition_explicit(
     nv, 
     xadj, 
     adjncy, 
-    NULL, 
-    NULL,
-    numPart_, 
+    xweight, 
+    weight,
+    options, 
     (mtmetis_pid_t*)verPartitionArray, 
     NULL);
+printf("Metis errocode : %d && %d",temp, temp==MTMETIS_SUCCESS);
 
-
+  free(xweight);
+  free(options);
   free(off);
   free(ind);
   free(weight);
@@ -100,6 +133,11 @@ main (const int argc, char *argv[])
 	      (int64_t**)&ind, (int64_t**)&weight, (int64_t**)&graphmem,
 	      action_stream_name, &naction, (int64_t**)&action, (int64_t**)&actionmem);
 
+
+    for(int i=0; i<naction;i++)
+      if(action[2*i]>nv||action[2*i+1]>nv)
+      printf("(%ld , %ld)  , ",action[2*i],action[2*i+1]);
+
   print_initial_graph_stats (nv, ne, batch_size, nbatch, naction);
   BATCH_SIZE_CHECK();
 
@@ -111,7 +149,36 @@ main (const int argc, char *argv[])
 #endif
 
 
+
+  mtmetis_vtx_t *xadj=(mtmetis_vtx_t*)off;
+  mtmetis_adj_t *adjncy=(mtmetis_adj_t*)ind; 
+
+  double* options=mtmetis_init_options();
+
+  options[MTMETIS_OPTION_NPARTS]=2;
+  options[MTMETIS_OPTION_CTYPE]=MTMETIS_CTYPE_SHEM;
+  options[MTMETIS_OPTION_PTYPE]=MTMETIS_PTYPE_ESEP;
+  options[MTMETIS_OPTION_CONTYPE]=MTMETIS_CONTYPE_SORT;
+  options[MTMETIS_OPTION_RTYPE]=MTMETIS_RTYPE_GREEDY;
+  options[MTMETIS_OPTION_NRUNS]=10;
+  options[MTMETIS_OPTION_NITER]=10;
+
+  mtmetis_vtx_t *csrPart= (mtmetis_vtx_t*)malloc(nv*sizeof(mtmetis_vtx_t));
+
+  options[MTMETIS_OPTION_IGNORE]=MTMETIS_IGNORE_VERTEXWEIGHTS+MTMETIS_IGNORE_EDGEWEIGHTS;
+  mtmetis_partition_explicit(
+    nv, 
+    xadj, 
+    adjncy, 
+    NULL, 
+    weight,
+    options, 
+    (mtmetis_pid_t*)csrPart, 
+    NULL);
+
+
   update_time_trace = xmalloc (nbatch * sizeof(*update_time_trace));
+
 
   /* Convert to STINGER */
   tic ();
@@ -139,10 +206,62 @@ main (const int argc, char *argv[])
   mtmetis_vtx_t *lastPart= (mtmetis_vtx_t*)malloc(nv*sizeof(mtmetis_vtx_t));
 
 
+  int64_t inserted=0;
   for (int64_t actno = 0; actno < nbatch * batch_size; actno += batch_size)
   {
     tic();
     int64_t diffPartitions=0;
+    const int64_t endact = (((actno + batch_size) > naction) ? naction : actno + batch_size);
+    int64_t *actions = &action[2*actno];
+    int64_t numActions = endact - actno;
+
+    MTA("mta assert parallel")
+    MTA("mta block dynamic schedule")
+    OMP("omp parallel for")
+    for(uint64_t k = 0; k < endact - actno; k++) {
+      const int64_t i = actions[2 * k];
+      const int64_t j = actions[2 * k + 1];
+        if (i != j && i >= 0) {
+          if(prevPart[i]!=prevPart[j]){
+            __sync_add_and_fetch(&diffPartitions,1);
+          }
+      	int val=stinger_insert_edge (S, 0, i, j, 1, actno+2);
+      	val+=stinger_insert_edge (S, 0, j, i, 1, actno+2);
+        __sync_add_and_fetch(&inserted,val);
+      }
+    }
+    update_time_trace[ntrace] = toc();
+    PRINT_STAT_INT64("Cross partition edges - before :", diffPartitions);
+    partitionStinger(S,nv, 2, currPart);
+    if(ntrace==0)
+      memcpy(firstPart,currPart,nv*sizeof(mtmetis_vtx_t));
+
+    temp=prevPart;  prevPart=currPart; currPart=temp;
+    ntrace++;
+   diffPartitions=0;
+    MTA("mta assert parallel")
+    MTA("mta block dynamic schedule")
+    OMP("omp parallel for")
+    for(uint64_t k = 0; k < endact - actno; k++) {
+      const int64_t i = actions[2 * k];
+      const int64_t j = actions[2 * k + 1];
+        if (i != j && i >= 0) {
+          if(prevPart[i]!=prevPart[j]){
+            __sync_add_and_fetch(&diffPartitions,1);
+          }
+      }
+    }
+    update_time_trace[ntrace] = toc();
+    PRINT_STAT_INT64("Cross partition edges -  after :", diffPartitions);
+  } /* End of batch */
+
+  memcpy(lastPart,prevPart,nv*sizeof(mtmetis_vtx_t));
+
+  int64_t diffPartitions=0,diffCsrPartitions=0;
+
+  for (int64_t actno = 0; actno < nbatch * batch_size; actno += batch_size)
+  {
+
     const int64_t endact = (actno + batch_size > naction ? naction : actno + batch_size);
     int64_t *actions = &action[2*actno];
     int64_t numActions = endact - actno;
@@ -153,35 +272,25 @@ main (const int argc, char *argv[])
     for(uint64_t k = 0; k < endact - actno; k++) {
       const int64_t i = actions[2 * k];
       const int64_t j = actions[2 * k + 1];
-/* // DISABLING Deletions for this experiment 
-
-      if (i != j && i < 0) {
-      	stinger_remove_edge(S, 0, ~i, ~j);
-      	stinger_remove_edge(S, 0, ~j, ~i);
-      }
-*/      
         if (i != j && i >= 0) {
-          if(prevPart[i]!=prevPart[j]){
+          if(lastPart[i]!=lastPart[j]){
             __sync_add_and_fetch(&diffPartitions,1);
           }
-      	stinger_insert_edge (S, 0, i, j, 1, actno+2);
-      	stinger_insert_edge (S, 0, j, i, 1, actno+2);
+          if(csrPart[i]!=csrPart[j]){
+            __sync_add_and_fetch(&diffCsrPartitions,1);
+          }
       }
     }
 
-    update_time_trace[ntrace] = toc();
-    PRINT_STAT_INT64("Cross partition edges", diffPartitions);
-    partitionStinger(S,nv, 4, currPart);
-    if(ntrace==0)
-      memcpy(firstPart,currPart,nv*sizeof(mtmetis_vtx_t));
-    
-
-    temp=prevPart;  prevPart=currPart; currPart=temp;
-    ntrace++;
   } /* End of batch */
 
-  memcpy(lastPart,prevPart,nv*sizeof(mtmetis_vtx_t));
+    PRINT_STAT_INT64("Actual number of inserted edges :", inserted);
 
+    PRINT_STAT_INT64("Cross partition for last iteration :", diffPartitions);
+    PRINT_STAT_INT64("Cross partition for CSR :", diffCsrPartitions);
+
+
+  free(csrPart);
 
   free(firstPart);  free(prevPart);  free(currPart);  free(lastPart);
 
@@ -203,7 +312,5 @@ main (const int argc, char *argv[])
   stinger_free_all (S);
   free (actionmem);
   STATS_END();
-
-
 
 }
