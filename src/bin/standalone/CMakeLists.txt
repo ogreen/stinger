@@ -48,16 +48,27 @@ FOREACH(subdir ${subs})
       ENDFOREACH()
       TARGET_LINK_LIBRARIES(stinger_${subdir} ${libdep_${subdir}})
 
-		FIND_FILE(METIS libmtmetis.a /usr/local/lib)
+		FIND_FILE(MTMETIS libmtmetis.a /usr/local/lib)
+		MESSAGE(${MTMETIS})
+
+		FIND_FILE(METIS libmetis.a /usr/local/lib)
 		MESSAGE(${METIS})
 
-		IF (METIS)
+		IF (MTMETIS)
 		      TARGET_LINK_LIBRARIES(stinger_${subdir} libmtmetis.a)			
 			  link_directories(/usr/local/lib)
-			MESSAGE("HELLO")
+		ENDIF (MTMETIS)
+		IF(NOT MTMETIS)
+		  MESSAGE(SEND_ERROR "Cannot find library libmtmetis.a")
+		ENDIF(NOT MTMETIS)
+
+
+		IF (METIS)
+		      TARGET_LINK_LIBRARIES(stinger_${subdir} libmetis.a)			
+			  link_directories(/usr/local/lib)
 		ENDIF (METIS)
 		IF(NOT METIS)
-		  MESSAGE(SEND_ERROR "Cannot find library xxxxlib.so")
+		  MESSAGE(SEND_ERROR "Cannot find library libmetis.a")
 		ENDIF(NOT METIS)
 
 

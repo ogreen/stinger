@@ -11,8 +11,13 @@
 #define MTMETIS_64BIT_EDGES
 #define MTMETIS_64BIT_WEIGHTS
 
-#include <mtmetis.h>
+#define METIS 1
 
+#if METIS==1
+#include <metis.h>
+#else
+#include <mtmetis.h>
+#endif
 
 #include "stinger_core/stinger_atomics.h"
 #include "stinger_utils/stinger_utils.h"
@@ -47,30 +52,6 @@ static struct stinger * S;
 static double * update_time_trace;
 
 
-/*
-  idx_t options[METIS_NOPTIONS];
-  METIS_SetDefaultOptions(options);
-
-  options[METIS_OPTION_CTYPE]=METIS_CTYPE_SHEM;
-
-  options[METIS_OPTION_NUMBERING]=0;
-  options[METIS_OPTION_NO2HOP]=1;
-*/
-//  int temp= METIS_PartGraphRecursive(&nv_, &ncon, xadj, adjncy,  NULL, NULL, NULL, 
-//    &numPart_, NULL, NULL, options, &objval, verPartitionArray);
-//  int temp= METIS_PartGraphKway(&nv_, &ncon, xadj, adjncy,  NULL, NULL, NULL, 
-//    &numPart_, NULL, NULL, options, &objval, verPartitionArray);
-
-//int temp= mtmetis_partkway(
-    // nv, 
-    // xadj, 
-    // adjncy, 
-    // NULL, 
-    // NULL,
-    // numPart_, 
-    // (mtmetis_pid_t*)verPartitionArray, 
-    // NULL);
-
 
 void partitionStinger(struct stinger* GSting, const  int64_t nv,const  int64_t numPart, int64_t* verPartitionArray){
 
@@ -82,45 +63,104 @@ void partitionStinger(struct stinger* GSting, const  int64_t nv,const  int64_t n
   stinger_to_unsorted_csr (GSting, nv+1, (int64_t**)&off, (int64_t**)&ind, (int64_t**)&weight,NULL, NULL, NULL);
 
 
-  mtmetis_vtx_t *xweight= (mtmetis_vtx_t*)malloc((nv+1)*sizeof(mtmetis_vtx_t));
-  for(int v=0;v<nv; v++)
-    xweight[v]=1;
+#if METIS==1
+    idx_t options[METIS_NOPTIONS];
+    idx_t ncon=1;
+    METIS_SetDefaultOptions(options);
 
-  mtmetis_vtx_t *xadj=(mtmetis_vtx_t*)off;
-  mtmetis_adj_t *adjncy=(mtmetis_adj_t*)ind; 
+    options[METIS_OPTION_CTYPE]=METIS_CTYPE_SHEM;
+    options[METIS_OPTION_PTYPE]=METIS_PTYPE_KWAY;
+    options[METIS_OPTION_IPTYPE]=METIS_IPTYPE_EDGE;
+    options[METIS_OPTION_OBJTYPE]=METIS_OBJTYPE_CUT;
+    options[METIS_OPTION_NUMBERING]=0;
+    options[METIS_OPTION_NO2HOP]=1;
+    idx_t objval;//= (idx_t*)malloc((numPart_)*sizeof(idx_t));
+    idx_t* xadj=off;
+    idx_t* adjncy=ind;
 
-  printf("\nnumber of vertices and edges: %ld and %ld \n",nv, xadj[nv+1]);
+  //  int temp= METIS_PartGraphRecursive(&nv_, &ncon, xadj, adjncy,  NULL, NULL, NULL, 
+  //    &numPart_, NULL, NULL, options, &objval, verPartitionArray);
+    int temp= METIS_PartGraphKway(&nv_, &ncon, xadj, adjncy,  NULL, NULL, NULL, 
+      &numPart_, NULL, NULL, options, &objval, verPartitionArray);
 
-  double* options=mtmetis_init_options();
+//    printf("edgecut size: %ld", objval);
+#else
 
-  options[MTMETIS_OPTION_NPARTS]=numPart;
-//  options[MTMETIS_OPTION_CTYPE]=MTMETIS_CTYPE_SHEM;
-  options[MTMETIS_OPTION_PTYPE]=MTMETIS_PTYPE_KWAY;
-//  options[MTMETIS_OPTION_CONTYPE]=MTMETIS_CONTYPE_SORT;
-//  options[MTMETIS_OPTION_RTYPE]=MTMETIS_RTYPE_GREEDY;
-//  options[MTMETIS_OPTION_VERBOSITY]=MTMETIS_VERBOSITY_LOW;
+    mtmetis_vtx_t *xadj=(mtmetis_vtx_t*)off;
+    mtmetis_adj_t *adjncy=(mtmetis_adj_t*)ind; 
 
-//  options[MTMETIS_OPTION_NRUNS]=10;
-//  options[MTMETIS_OPTION_NITER]=10;
 
-//  options[MTMETIS_OPTION_IGNORE]=MTMETIS_IGNORE_VERTEXWEIGHTS+MTMETIS_IGNORE_EDGEWEIGHTS;
-  
-int temp= mtmetis_partition_explicit(
-    nv, 
-    xadj, 
-    adjncy, 
-    xweight, 
-    weight,
-    options, 
-    (mtmetis_pid_t*)verPartitionArray, 
-    NULL);
-printf("Metis errocode : %d && %d",temp, temp==MTMETIS_SUCCESS);
+    double* options=mtmetis_init_options();
+    mtmetis_vtx_t *xweight= (mtmetis_vtx_t*)malloc((nv+1)*sizeof(mtmetis_vtx_t));
+    for(int v=0;v<nv; v++)
+      xweight[v]=1;
 
+    printf("\nnumber of vertices and edges: %ld and %ld \n",nv, xadj[nv+1]);
+
+
+      options[MTMETIS_OPTION_NPARTS]=numPart;
+    //  options[MTMETIS_OPTION_CTYPE]=MTMETIS_CTYPE_SHEM;
+      options[MTMETIS_OPTION_PTYPE]=MTMETIS_PTYPE_KWAY;
+    //  options[MTMETIS_OPTION_CONTYPE]=MTMETIS_CONTYPE_SORT;
+    //  options[MTMETIS_OPTION_RTYPE]=MTMETIS_RTYPE_GREEDY;
+    //  options[MTMETIS_OPTION_VERBOSITY]=MTMETIS_VERBOSITY_LOW;
+
+    //  options[MTMETIS_OPTION_NRUNS]=10;
+    //  options[MTMETIS_OPTION_NITER]=10;
+
+    //  options[MTMETIS_OPTION_IGNORE]=MTMETIS_IGNORE_VERTEXWEIGHTS+MTMETIS_IGNORE_EDGEWEIGHTS;
+      
+    int temp= mtmetis_partition_explicit(
+        nv, 
+        xadj, 
+        adjncy, 
+        xweight, 
+        weight,
+        options, 
+        (mtmetis_pid_t*)verPartitionArray, 
+        NULL);
+    printf("Metis errocode : %d && %d",temp, temp==MTMETIS_SUCCESS);
   free(xweight);
   free(options);
+
+#endif
+
   free(off);
   free(ind);
   free(weight);
+}
+
+
+void compPartitions(struct stinger* GSting, const  int64_t nv, int64_t* verPartitionBeforeArray,
+    int64_t* verPartitionAfterArray){
+
+    int64_t *countSameAfter= (int64_t*)malloc((nv+1)*sizeof(int64_t));
+    int64_t *countSameBefore= (int64_t*)malloc((nv+1)*sizeof(int64_t));
+    int64_t samePartitions=0;
+
+    MTA("mta assert parallel")
+    MTA("mta block dynamic schedule")
+    OMP("omp parallel for")
+    for(int64_t src=0; src<nv; src++){
+      countSameAfter[src]=0;
+      countSameBefore[src]=0;
+      int edgeCounter=0;
+      STINGER_FORALL_EDGES_OF_VTX_BEGIN(GSting,src)
+        int64_t dest=STINGER_EDGE_DEST;
+
+        if(verPartitionBeforeArray[dest]==verPartitionBeforeArray[src])
+          countSameBefore[src]++;
+        if(verPartitionAfterArray[dest]==verPartitionAfterArray[src])
+          countSameAfter[src]++;
+        edgeCounter++;
+      STINGER_FORALL_EDGES_OF_VTX_END();
+      double percentage=(double)(countSameAfter[src]-countSameBefore[src])/(double)edgeCounter;
+      if(fabs(percentage)<0.3)
+        __sync_add_and_fetch(&samePartitions,1);
+    }
+    free(countSameAfter);
+    free(countSameBefore);
+    PRINT_STAT_INT64("Same partition before and after",samePartitions);
 }
 
 int
@@ -149,6 +189,7 @@ main (const int argc, char *argv[])
 #endif
 
 
+#if METIS==0
 
   mtmetis_vtx_t *xadj=(mtmetis_vtx_t*)off;
   mtmetis_adj_t *adjncy=(mtmetis_adj_t*)ind; 
@@ -176,6 +217,7 @@ main (const int argc, char *argv[])
     (mtmetis_pid_t*)csrPart, 
     NULL);
 
+#endif
 
   update_time_trace = xmalloc (nbatch * sizeof(*update_time_trace));
 
@@ -198,13 +240,12 @@ main (const int argc, char *argv[])
   /* Updates */
   int64_t ntrace = 0;
 
-  mtmetis_vtx_t *firstPart= (mtmetis_vtx_t*)malloc(nv*sizeof(mtmetis_vtx_t));
+  int64_t *firstPart= (int64_t*)malloc(nv*sizeof(int64_t));
 
-  mtmetis_vtx_t *currPart= (mtmetis_vtx_t*)malloc(nv*sizeof(mtmetis_vtx_t));
-  mtmetis_vtx_t *prevPart= (mtmetis_vtx_t*)malloc(nv*sizeof(mtmetis_vtx_t));
-  mtmetis_vtx_t* temp;
-  mtmetis_vtx_t *lastPart= (mtmetis_vtx_t*)malloc(nv*sizeof(mtmetis_vtx_t));
-
+  int64_t *currPart= (int64_t*)malloc(nv*sizeof(int64_t));
+  int64_t *prevPart= (int64_t*)malloc(nv*sizeof(int64_t));
+  int64_t* temp;
+  int64_t *lastPart= (int64_t*)malloc(nv*sizeof(int64_t));
 
   int64_t inserted=0;
   for (int64_t actno = 0; actno < nbatch * batch_size; actno += batch_size)
@@ -234,7 +275,9 @@ main (const int argc, char *argv[])
     PRINT_STAT_INT64("Cross partition edges - before :", diffPartitions);
     partitionStinger(S,nv, 2, currPart);
     if(ntrace==0)
-      memcpy(firstPart,currPart,nv*sizeof(mtmetis_vtx_t));
+      memcpy(firstPart,currPart,nv*sizeof(int64_t));
+
+    compPartitions(S,nv, prevPart,currPart);
 
     temp=prevPart;  prevPart=currPart; currPart=temp;
     ntrace++;
@@ -255,7 +298,7 @@ main (const int argc, char *argv[])
     PRINT_STAT_INT64("Cross partition edges -  after :", diffPartitions);
   } /* End of batch */
 
-  memcpy(lastPart,prevPart,nv*sizeof(mtmetis_vtx_t));
+  memcpy(lastPart,prevPart,nv*sizeof(int64_t));
 
   int64_t diffPartitions=0,diffCsrPartitions=0;
 
@@ -276,9 +319,11 @@ main (const int argc, char *argv[])
           if(lastPart[i]!=lastPart[j]){
             __sync_add_and_fetch(&diffPartitions,1);
           }
+#if METIS==0
           if(csrPart[i]!=csrPart[j]){
             __sync_add_and_fetch(&diffCsrPartitions,1);
           }
+#endif          
       }
     }
 
@@ -287,10 +332,12 @@ main (const int argc, char *argv[])
     PRINT_STAT_INT64("Actual number of inserted edges :", inserted);
 
     PRINT_STAT_INT64("Cross partition for last iteration :", diffPartitions);
+
+#if METIS==0
     PRINT_STAT_INT64("Cross partition for CSR :", diffCsrPartitions);
 
-
   free(csrPart);
+#endif
 
   free(firstPart);  free(prevPart);  free(currPart);  free(lastPart);
 
