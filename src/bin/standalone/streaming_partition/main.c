@@ -3,6 +3,8 @@
 #define _LARGEFILE64_SOURCE 1
 #define _FILE_OFFSET_BITS 64
 
+#include <stdlib.h>
+
 #if defined(_OPENMP)
 #include "omp.h"
 #endif
@@ -42,10 +44,112 @@ static int64_t * restrict actionmem;
 static char * initial_graph_name = INITIAL_GRAPH_NAME_DEFAULT;
 static char * action_stream_name = ACTION_STREAM_NAME_DEFAULT;
 
+#define PARTITIONS_DEFAULT 4
+
 static long batch_size = BATCH_SIZE_DEFAULT;
 static long nbatch = NBATCH_DEFAULT;
+static long npartitions = PARTITIONS_DEFAULT;
 
 static struct stinger * S;
+
+void usage (FILE * out, char *progname)
+{
+  fprintf (out,
+           "%s [--batch-size|-b #] [--nbatch|-n #] [--partitions|-p #] [graph-name.bin] [action-stream.bin]\n"
+           "\tDefaults:\n"
+           "\t   Batch size, default vale = %d\n"
+           "\t   Number of batches, default vale = %d\n"
+           "\t   Number of partitions, default vale = %d\n"
+           "\t   stinger graph name, default vale = \"%s\"\n"
+           "\t   stinger actions stream name, default vale = \"%s\"\n",
+           progname,
+           BATCH_SIZE_DEFAULT,
+           NBATCH_DEFAULT,
+           PARTITIONS_DEFAULT, 
+           INITIAL_GRAPH_NAME_DEFAULT,
+           ACTION_STREAM_NAME_DEFAULT);
+}
+
+/**
+* @brief Parses command line arguments.
+*
+* Parses the command line input as given by usage().  Batch size, number of
+* batches, initial graph filename, and action stream filename are given by
+* to the caller if they were specified on the command line.
+*
+* @param argc The number of arguments
+* @param argv[] The array of arguments
+* @param initial_graph_name Path/filename of the initial input graph on disk
+* @param action_stream_name Path/filename of the action stream on disk
+* @param batch_size Number of edge actions to consider in one batch
+* @param nbatch Number of batchs to process
+*/
+void
+parse_args_streaming_partitions (const int argc, char *argv[], char ** graph_name,
+    char **action_name, int64_t* batch_num, int64_t* batch_size, int64_t* num_partitions) {
+  int k = 1;
+  int seenPartition=0, seenBatchSize=0, seenNumBatches=0;
+  if (k >= argc)
+    return;
+  while (k < argc && argv[k][0] == '-') {
+    if (0 == strcmp (argv[k], "--percentage") || 0 == strcmp (argv[k], "-p")) {
+      if (seenPartition)
+        goto err;
+      seenPartition = 1;
+      ++k;
+      if (k >= argc)
+        goto err;
+      *num_partitions = strtol (argv[k], NULL,10) ;
+      if (*num_partitions<=1)
+        goto err;
+      ++k;
+    } 
+    else if (0 == strcmp (argv[k], "--batch-size") || 0 == strcmp (argv[k], "-b")) {
+      if (seenBatchSize)
+        goto err;
+      seenBatchSize = 1;
+      ++k;
+      if (k >= argc)
+        goto err;
+      *batch_size = strtol (argv[k], NULL,10);
+      if (*batch_size<1)
+        goto err;
+      ++k;
+    } 
+    else if (0 == strcmp (argv[k], "--nbatch") || 0 == strcmp (argv[k], "-n")) {
+      if (seenNumBatches)
+        goto err;
+      seenNumBatches = 1;
+      ++k;
+      if (k >= argc)
+        goto err;
+      *batch_num = strtol (argv[k], NULL,10);
+      if (*batch_num<0)
+        goto err;
+      ++k;
+    }     
+    else if (0 == strcmp (argv[k], "--help")
+             || 0 == strcmp (argv[k], "-h") || 0 == strcmp (argv[k], "-?")) {
+      usage (stdout, argv[0]);
+      exit (EXIT_SUCCESS);
+      return;
+    } else if (0 == strcmp (argv[k], "--")) {
+      ++k;
+      break;
+    }
+  }
+  if (k < argc)
+    *graph_name = argv[k++];
+  if (k < argc)
+    *action_name = argv[k++];
+  return;
+ err:
+  usage (stderr, argv[0]);
+  exit (EXIT_FAILURE);
+  return;
+}
+
+
 
 int64_t compPartitions(struct stinger* GSting, const  int64_t nv, 
   int64_t* verPartitionBeforeArray, int64_t* verPartitionAfterArray);
@@ -57,7 +161,6 @@ void partitionStinger(struct stinger* GSting, const  int64_t nv,const  int64_t n
   int64_t nv_=nv;
   int64_t numPart_=numPart;
   stinger_to_unsorted_csr (GSting, nv+1, (int64_t**)&off, (int64_t**)&ind, (int64_t**)&weight,NULL, NULL, NULL);
-
 
 
 #if METIS==1
@@ -127,19 +230,32 @@ void partitionStinger(struct stinger* GSting, const  int64_t nv,const  int64_t n
   free(weight);
 }
 
+typedef struct {
+  int64_t diffPartBefore;
+  int64_t diffPartAfter;
+  int64_t insertedEdges;
+  int64_t edgesInGraph;
+  int64_t graphSizeDoubled;
+  int64_t* partAfterDoubling;  
+
+} iterationInfo;
 
 
 int main (const int argc, char *argv[]){
-  parse_args (argc, argv, &initial_graph_name, &action_stream_name, &batch_size, &nbatch);
+  parse_args_streaming_partitions (argc,argv, &initial_graph_name,&action_stream_name,
+    &nbatch,&batch_size, &npartitions);
+//  parse_args (argc, argv, &initial_graph_name, &action_stream_name, &batch_size, &nbatch);
   STATS_INIT();
   load_graph_and_action_stream (initial_graph_name, &nv, &ne, (int64_t**)&off,
 	      (int64_t**)&ind, (int64_t**)&weight, (int64_t**)&graphmem,
 	      action_stream_name, &naction, (int64_t**)&action, (int64_t**)&actionmem);
-
+  
   print_initial_graph_stats (nv, ne, batch_size, nbatch, naction);
   BATCH_SIZE_CHECK();
+  PRINT_STAT_INT64("number of partitions", npartitions);
 
-  nbatch=naction/batch_size;
+  nbatch=(naction/batch_size)+((naction%batch_size)>1);
+  iterationInfo* extraInfo=(iterationInfo*)malloc(sizeof(iterationInfo)*nbatch);
 
 #if defined(_OPENMP)
   OMP("omp parallel") {
@@ -148,7 +264,7 @@ int main (const int argc, char *argv[]){
   }
 #endif
 
-  int64_t initialNe=ne, currentNe=ne, lastDoubleNe=ne, doubledFlag=0;
+  int64_t initialNe=ne, currentNe=ne, lastDoubleNe=ne, doubledFlag=0, finalNe=ne+naction;
 
   /* Convert to STINGER */
   tic (); S = stinger_new ();
@@ -169,12 +285,11 @@ int main (const int argc, char *argv[]){
   int64_t *currPart   = (int64_t*)malloc(nv*sizeof(int64_t));
   int64_t *prevPart   = (int64_t*)malloc(nv*sizeof(int64_t));
   int64_t *lastPart   = (int64_t*)malloc(nv*sizeof(int64_t));
-  int64_t *doublePart = (int64_t*)malloc(nv*sizeof(int64_t));
 
   int64_t inserted=0,val;
   int64_t batchId=0;
 
-  partitionStinger(S,nv, 2, firstPart);
+  partitionStinger(S,nv, npartitions, firstPart);
 
   // Going through all the batches
   for (int64_t actno = 0; actno < nbatch * batch_size; actno += batch_size,batchId++){
@@ -200,19 +315,11 @@ int main (const int argc, char *argv[]){
       }
     }
 
-    partitionStinger(S,nv, 2, currPart);
-    currentNe+=inserted;
+    partitionStinger(S,nv, npartitions, currPart);
     int64_t samePartitions=compPartitions(S,nv, prevPart,currPart);
     // Swapping partition arrays every iteration;
     int64_t* temp;temp=prevPart;  prevPart=currPart; currPart=temp;
     
-    // Graph has doubled the number of edges
-    if (currentNe > (2*lastDoubleNe)){
-      lastDoubleNe=currentNe;
-      doubledFlag=1;
-      memcpy(doublePart,prevPart,nv*sizeof(int64_t));      
-    }
-
     OMP("omp parallel for")
     for(uint64_t k = 0; k < endact - actno; k++) {
       const int64_t i = actions[2 * k];
@@ -223,6 +330,21 @@ int main (const int argc, char *argv[]){
           }
       }
     }
+    currentNe+=inserted;
+    extraInfo[batchId].graphSizeDoubled=0;
+    if (currentNe > (2*lastDoubleNe)){
+      lastDoubleNe=currentNe;
+      extraInfo[batchId].graphSizeDoubled=1;
+      extraInfo[batchId].partAfterDoubling=(int64_t*)malloc(nv*sizeof(int64_t));
+      memcpy(extraInfo[batchId].partAfterDoubling,prevPart,nv*sizeof(int64_t));
+    }
+
+    extraInfo[batchId].diffPartBefore=diffPartitionsBefore;
+    extraInfo[batchId].diffPartAfter=diffPartitionsAfter;
+    extraInfo[batchId].insertedEdges=inserted;
+    extraInfo[batchId].edgesInGraph = currentNe;
+    // Graph has doubled the number of edges
+
     PRINT_STAT_INT64("Cross partition edges - before :", diffPartitionsBefore);    
     PRINT_STAT_INT64("Cross partition edges -  after :", diffPartitionsAfter);
     PRINT_STAT_INT64("Same partition before and after", samePartitions);    
@@ -247,13 +369,18 @@ int main (const int argc, char *argv[]){
         }
       }
     }
-    
   } 
   /* End of batch */
   PRINT_STAT_INT64("Actual number of inserted edges :", inserted);
   PRINT_STAT_INT64("Cross partition for last iteration :", diffPartitions);
 
-  free(firstPart);  free(prevPart);  free(currPart);  free(lastPart); free(doublePart);
+  for(int64_t b=0;b<nbatch; b++){
+    if(extraInfo[b].graphSizeDoubled)
+      free(extraInfo[b].partAfterDoubling);
+  }
+
+  free(firstPart);  free(prevPart);  free(currPart);  free(lastPart); 
+  free(extraInfo);
 
   errorCode = stinger_consistency_check (S, nv);
   PRINT_STAT_HEX64 ("error_code", (long unsigned) errorCode);
@@ -296,4 +423,8 @@ int64_t compPartitions(struct stinger* GSting, const  int64_t nv, int64_t* verPa
     free(countSameBefore);
     return samePartitions;
 }
+
+
+
+
 
