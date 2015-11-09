@@ -59,6 +59,7 @@ void partitionStinger(struct stinger* GSting, const  int64_t nv,const  int64_t n
   stinger_to_unsorted_csr (GSting, nv+1, (int64_t**)&off, (int64_t**)&ind, (int64_t**)&weight,NULL, NULL, NULL);
 
 
+
 #if METIS==1
     idx_t options[METIS_NOPTIONS];
     idx_t ncon=1;
@@ -81,7 +82,7 @@ void partitionStinger(struct stinger* GSting, const  int64_t nv,const  int64_t n
 
 //    printf("edgecut size: %ld", objval);
 #else
-
+/*
     mtmetis_vtx_t *xadj=(mtmetis_vtx_t*)off;
     mtmetis_adj_t *adjncy=(mtmetis_adj_t*)ind; 
 
@@ -118,7 +119,7 @@ void partitionStinger(struct stinger* GSting, const  int64_t nv,const  int64_t n
     printf("Metis errocode : %d && %d",temp, temp==MTMETIS_SUCCESS);
   free(xweight);
   free(options);
-
+*/
 #endif
 
   free(off);
@@ -163,23 +164,7 @@ int main (const int argc, char *argv[]){
   PRINT_STAT_HEX64 ("error_code", (long unsigned) errorCode);
   PRINT_STAT_DOUBLE ("time_check", time_check);
 
-<<<<<<< HEAD
-  /* Updates */
-  int64_t ntrace = 0;
 
-  int64_t *firstPart= (int64_t*)malloc(nv*sizeof(int64_t));
-
-  int64_t *currPart= (int64_t*)malloc(nv*sizeof(int64_t));
-  int64_t *prevPart= (int64_t*)malloc(nv*sizeof(int64_t));
-  int64_t* temp;
-  int64_t *lastPart= (int64_t*)malloc(nv*sizeof(int64_t));
-
-  int64_t inserted=0;
-  for (int64_t actno = 0; actno < nbatch * batch_size; actno += batch_size)
-  {
-    tic();
-    int64_t diffPartitions=0;
-=======
   int64_t *firstPart  = (int64_t*)malloc(nv*sizeof(int64_t));
   int64_t *currPart   = (int64_t*)malloc(nv*sizeof(int64_t));
   int64_t *prevPart   = (int64_t*)malloc(nv*sizeof(int64_t));
@@ -194,7 +179,6 @@ int main (const int argc, char *argv[]){
   // Going through all the batches
   for (int64_t actno = 0; actno < nbatch * batch_size; actno += batch_size,batchId++){
     int64_t diffPartitionsBefore=0,diffPartitionsAfter=0;
->>>>>>> 0086195... starting to collect additional information each iteration
     const int64_t endact = (((actno + batch_size) > naction) ? naction : actno + batch_size);
     int64_t *actions = &action[2*actno];
     int64_t numActions = endact - actno;
@@ -209,40 +193,19 @@ int main (const int argc, char *argv[]){
           if(prevPart[i]!=prevPart[j]){
             __sync_add_and_fetch(&diffPartitionsBefore,1);
           }
-<<<<<<< HEAD
-      	int val=stinger_insert_edge (S, 0, i, j, 1, actno+2);
-=======
         // Counting the number of edges inserted into the network for sanity checking
       	val =stinger_insert_edge (S, 0, i, j, 1, actno+2);
->>>>>>> 0086195... starting to collect additional information each iteration
       	val+=stinger_insert_edge (S, 0, j, i, 1, actno+2);
         __sync_add_and_fetch(&inserted,val); 
       }
     }
-<<<<<<< HEAD
-    update_time_trace[ntrace] = toc();
-    PRINT_STAT_INT64("Cross partition edges - before :", diffPartitions);
+
     partitionStinger(S,nv, 2, currPart);
-    if(ntrace==0)
-      memcpy(firstPart,currPart,nv*sizeof(int64_t));
-=======
     currentNe+=inserted;
-
-
->>>>>>> 0086195... starting to collect additional information each iteration
-
     int64_t samePartitions=compPartitions(S,nv, prevPart,currPart);
     // Swapping partition arrays every iteration;
     int64_t* temp;temp=prevPart;  prevPart=currPart; currPart=temp;
     
-
-<<<<<<< HEAD
-    temp=prevPart;  prevPart=currPart; currPart=temp;
-    ntrace++;
-   diffPartitions=0;
-    MTA("mta assert parallel")
-    MTA("mta block dynamic schedule")
-=======
     // Graph has doubled the number of edges
     if (currentNe > (2*lastDoubleNe)){
       lastDoubleNe=currentNe;
@@ -250,7 +213,6 @@ int main (const int argc, char *argv[]){
       memcpy(doublePart,prevPart,nv*sizeof(int64_t));      
     }
 
->>>>>>> 0086195... starting to collect additional information each iteration
     OMP("omp parallel for")
     for(uint64_t k = 0; k < endact - actno; k++) {
       const int64_t i = actions[2 * k];
@@ -291,34 +253,8 @@ int main (const int argc, char *argv[]){
   PRINT_STAT_INT64("Actual number of inserted edges :", inserted);
   PRINT_STAT_INT64("Cross partition for last iteration :", diffPartitions);
 
-<<<<<<< HEAD
-  } /* End of batch */
-
-    PRINT_STAT_INT64("Actual number of inserted edges :", inserted);
-
-    PRINT_STAT_INT64("Cross partition for last iteration :", diffPartitions);
-
-#if METIS==0
-    PRINT_STAT_INT64("Cross partition for CSR :", diffCsrPartitions);
-
-  free(csrPart);
-#endif
-
-  free(firstPart);  free(prevPart);  free(currPart);  free(lastPart);
-
-  /* Print the times */
-  double time_updates = 0;
-  for (int64_t k = 0; k < nbatch; k++) {
-    time_updates += update_time_trace[k];
-  }
-  PRINT_STAT_DOUBLE ("time_updates", time_updates);
-  PRINT_STAT_DOUBLE ("updates_per_sec", (nbatch * batch_size) / time_updates); 
-
-  tic ();
-=======
   free(firstPart);  free(prevPart);  free(currPart);  free(lastPart); free(doublePart);
 
->>>>>>> 0086195... starting to collect additional information each iteration
   errorCode = stinger_consistency_check (S, nv);
   PRINT_STAT_HEX64 ("error_code", (long unsigned) errorCode);
 
