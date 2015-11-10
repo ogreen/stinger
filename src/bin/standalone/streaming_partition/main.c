@@ -52,107 +52,68 @@ static long npartitions = PARTITIONS_DEFAULT;
 
 static struct stinger * S;
 
-void usage (FILE * out, char *progname)
-{
-  fprintf (out,
-           "%s [--batch-size|-b #] [--nbatch|-n #] [--partitions|-p #] [graph-name.bin] [action-stream.bin]\n"
-           "\tDefaults:\n"
-           "\t   Batch size, default vale = %d\n"
-           "\t   Number of batches, default vale = %d\n"
-           "\t   Number of partitions, default vale = %d\n"
-           "\t   stinger graph name, default vale = \"%s\"\n"
-           "\t   stinger actions stream name, default vale = \"%s\"\n",
-           progname,
-           BATCH_SIZE_DEFAULT,
-           NBATCH_DEFAULT,
-           PARTITIONS_DEFAULT, 
-           INITIAL_GRAPH_NAME_DEFAULT,
-           ACTION_STREAM_NAME_DEFAULT);
-}
+typedef struct {
+  int64_t diffPartBefore;
+  int64_t diffPartAfter;
+  int64_t insertedEdges;
+  int64_t edgesInGraph;
+  int64_t graphSizeDoubled;
+  int64_t* partAfterDoubling;  
+  int64_t nvOverlapFirst;
+  int64_t nvOverlapPrevious;
+  int64_t nvOverlapDouble;
+  int64_t nvOverlapLast;
 
-/**
-* @brief Parses command line arguments.
-*
-* Parses the command line input as given by usage().  Batch size, number of
-* batches, initial graph filename, and action stream filename are given by
-* to the caller if they were specified on the command line.
-*
-* @param argc The number of arguments
-* @param argv[] The array of arguments
-* @param initial_graph_name Path/filename of the initial input graph on disk
-* @param action_stream_name Path/filename of the action stream on disk
-* @param batch_size Number of edge actions to consider in one batch
-* @param nbatch Number of batchs to process
-*/
-void
-parse_args_streaming_partitions (const int argc, char *argv[], char ** graph_name,
-    char **action_name, int64_t* batch_num, int64_t* batch_size, int64_t* num_partitions) {
-  int k = 1;
-  int seenPartition=0, seenBatchSize=0, seenNumBatches=0;
-  if (k >= argc)
-    return;
-  while (k < argc && argv[k][0] == '-') {
-    if (0 == strcmp (argv[k], "--percentage") || 0 == strcmp (argv[k], "-p")) {
-      if (seenPartition)
-        goto err;
-      seenPartition = 1;
-      ++k;
-      if (k >= argc)
-        goto err;
-      *num_partitions = strtol (argv[k], NULL,10) ;
-      if (*num_partitions<=1)
-        goto err;
-      ++k;
-    } 
-    else if (0 == strcmp (argv[k], "--batch-size") || 0 == strcmp (argv[k], "-b")) {
-      if (seenBatchSize)
-        goto err;
-      seenBatchSize = 1;
-      ++k;
-      if (k >= argc)
-        goto err;
-      *batch_size = strtol (argv[k], NULL,10);
-      if (*batch_size<1)
-        goto err;
-      ++k;
-    } 
-    else if (0 == strcmp (argv[k], "--nbatch") || 0 == strcmp (argv[k], "-n")) {
-      if (seenNumBatches)
-        goto err;
-      seenNumBatches = 1;
-      ++k;
-      if (k >= argc)
-        goto err;
-      *batch_num = strtol (argv[k], NULL,10);
-      if (*batch_num<0)
-        goto err;
-      ++k;
-    }     
-    else if (0 == strcmp (argv[k], "--help")
-             || 0 == strcmp (argv[k], "-h") || 0 == strcmp (argv[k], "-?")) {
-      usage (stdout, argv[0]);
-      exit (EXIT_SUCCESS);
-      return;
-    } else if (0 == strcmp (argv[k], "--")) {
-      ++k;
-      break;
+} iterationInfo;
+
+
+void prettyPrint(iterationInfo* extraInfo, int64_t nbatch, int64_t nv, int64_t ne, int64_t npartitions){
+  printf("\n");
+  nv--;
+  for(int64_t b=0;b<nbatch; b++){
+    printf("%11ld, ",nv);
+    printf("%11ld, ",npartitions);
+    printf("%11ld, ",extraInfo[b].diffPartBefore);
+    printf("%11ld, ",extraInfo[b].diffPartAfter);
+    printf("%11ld, ",extraInfo[b].insertedEdges);
+    printf("%11ld, ",extraInfo[b].edgesInGraph);
+    printf("%1.10lf, ",(double)extraInfo[b].edgesInGraph/(double)ne);
+
+    printf("%1.10lf, ",(double)extraInfo[b].nvOverlapFirst/(double)nv);
+    printf("%1.10lf, ",(double)extraInfo[b].nvOverlapPrevious/(double)nv);
+    if (extraInfo[b].graphSizeDoubled){
+      printf("%1.10lf, ",(double)extraInfo[b].nvOverlapDouble/(double)nv);
+      printf("%1.10lf, ",(double)extraInfo[b].nvOverlapLast/(double)nv);
     }
-  }
-  if (k < argc)
-    *graph_name = argv[k++];
-  if (k < argc)
-    *action_name = argv[k++];
-  return;
- err:
-  usage (stderr, argv[0]);
-  exit (EXIT_FAILURE);
-  return;
-}
 
+/*    printf("%11ld, ",);
+    printf("%11ld, ",);
+    printf("%11ld, ",);
+    printf("%11ld, ",);
+
+    extraInfo[b].nvOverlapLast    =  compPartitions(S,nv, fullSize,lastPart);
+    extraInfo[b].nvOverlapDouble  =  compPartitions(S,nv, halfSize,fullSize);
+
+
+extraInfo[b].nvOverlapFirst
+extraInfo[b].nvOverlapPrevious
+extraInfo[b].nvOverlapLast
+extraInfo[b].nvOverlapDouble
+    if (extraInfo[b].graphSizeDoubled){
+    }
+*/    
+    printf("\n");
+  }
+
+
+}
 
 
 int64_t compPartitions(struct stinger* GSting, const  int64_t nv, 
   int64_t* verPartitionBeforeArray, int64_t* verPartitionAfterArray);
+
+void parse_args_streaming_partitions (const int argc, char *argv[], char ** graph_name,
+    char **action_name, int64_t* batch_num, int64_t* batch_size, int64_t* num_partitions);
 
 void partitionStinger(struct stinger* GSting, const  int64_t nv,const  int64_t numPart, int64_t* verPartitionArray){
   int64_t * off;
@@ -230,15 +191,6 @@ void partitionStinger(struct stinger* GSting, const  int64_t nv,const  int64_t n
   free(weight);
 }
 
-typedef struct {
-  int64_t diffPartBefore;
-  int64_t diffPartAfter;
-  int64_t insertedEdges;
-  int64_t edgesInGraph;
-  int64_t graphSizeDoubled;
-  int64_t* partAfterDoubling;  
-
-} iterationInfo;
 
 
 int main (const int argc, char *argv[]){
@@ -280,13 +232,12 @@ int main (const int argc, char *argv[]){
   PRINT_STAT_HEX64 ("error_code", (long unsigned) errorCode);
   PRINT_STAT_DOUBLE ("time_check", time_check);
 
-
   int64_t *firstPart  = (int64_t*)malloc(nv*sizeof(int64_t));
   int64_t *currPart   = (int64_t*)malloc(nv*sizeof(int64_t));
   int64_t *prevPart   = (int64_t*)malloc(nv*sizeof(int64_t));
   int64_t *lastPart   = (int64_t*)malloc(nv*sizeof(int64_t));
 
-  int64_t inserted=0,val;
+  int64_t inserted=0,totalInserted=0;
   int64_t batchId=0;
 
   partitionStinger(S,nv, npartitions, firstPart);
@@ -297,7 +248,7 @@ int main (const int argc, char *argv[]){
     const int64_t endact = (((actno + batch_size) > naction) ? naction : actno + batch_size);
     int64_t *actions = &action[2*actno];
     int64_t numActions = endact - actno;
-
+    inserted=0;
     // Adding the edges into the network 
     OMP("omp parallel for")
     for(uint64_t k = 0; k < endact - actno; k++) {
@@ -309,30 +260,27 @@ int main (const int argc, char *argv[]){
             __sync_add_and_fetch(&diffPartitionsBefore,1);
           }
         // Counting the number of edges inserted into the network for sanity checking
-      	val =stinger_insert_edge (S, 0, i, j, 1, actno+2);
+      	int val =stinger_insert_edge (S, 0, i, j, 1, actno+2);
       	val+=stinger_insert_edge (S, 0, j, i, 1, actno+2);
         __sync_add_and_fetch(&inserted,val); 
       }
     }
 
     partitionStinger(S,nv, npartitions, currPart);
-    int64_t samePartitions=compPartitions(S,nv, prevPart,currPart);
     // Swapping partition arrays every iteration;
     int64_t* temp;temp=prevPart;  prevPart=currPart; currPart=temp;
     
     OMP("omp parallel for")
     for(uint64_t k = 0; k < endact - actno; k++) {
-      const int64_t i = actions[2 * k];
-      const int64_t j = actions[2 * k + 1];
-        if (i != j && i >= 0) {
-          if(prevPart[i]!=prevPart[j]){
-            __sync_add_and_fetch(&diffPartitionsAfter,1);
-          }
+      const int64_t i = actions[2 * k]; const int64_t j = actions[2 * k + 1];
+        if (i != j && i >= 0 && prevPart[i]!=prevPart[j]) {
+          __sync_add_and_fetch(&diffPartitionsAfter,1);
       }
     }
+
     currentNe+=inserted;
     extraInfo[batchId].graphSizeDoubled=0;
-    if (currentNe > (2*lastDoubleNe)){
+    if (currentNe > (2*lastDoubleNe) || batchId==(nbatch-1)){
       lastDoubleNe=currentNe;
       extraInfo[batchId].graphSizeDoubled=1;
       extraInfo[batchId].partAfterDoubling=(int64_t*)malloc(nv*sizeof(int64_t));
@@ -343,17 +291,14 @@ int main (const int argc, char *argv[]){
     extraInfo[batchId].diffPartAfter=diffPartitionsAfter;
     extraInfo[batchId].insertedEdges=inserted;
     extraInfo[batchId].edgesInGraph = currentNe;
-    // Graph has doubled the number of edges
-
-    PRINT_STAT_INT64("Cross partition edges - before :", diffPartitionsBefore);    
-    PRINT_STAT_INT64("Cross partition edges -  after :", diffPartitionsAfter);
-    PRINT_STAT_INT64("Same partition before and after", samePartitions);    
+    extraInfo[batchId].nvOverlapPrevious    =  compPartitions(S,nv, prevPart,currPart);
+    extraInfo[batchId].nvOverlapFirst =  compPartitions(S,nv, prevPart,firstPart);
+    totalInserted+=inserted;
   } /* End of batch */
 
   memcpy(lastPart,prevPart,nv*sizeof(int64_t));
 
   int64_t diffPartitions=0,diffCsrPartitions=0;
-
   for (int64_t actno = 0; actno < nbatch * batch_size; actno += batch_size)  {
     const int64_t endact = (actno + batch_size > naction ? naction : actno + batch_size);
     int64_t *actions = &action[2*actno];
@@ -361,18 +306,23 @@ int main (const int argc, char *argv[]){
 
     OMP("omp parallel for")
     for(uint64_t k = 0; k < endact - actno; k++) {
-      const int64_t i = actions[2 * k];
-      const int64_t j = actions[2 * k + 1];
-      if (i != j && i >= 0) {
-        if(lastPart[i]!=lastPart[j]){
+      const int64_t i = actions[2 * k]; const int64_t j = actions[2 * k + 1];
+        if (i != j && i >= 0 && lastPart[i]!=lastPart[j]) {
           __sync_add_and_fetch(&diffPartitions,1);
-        }
       }
     }
   } 
-  /* End of batch */
-  PRINT_STAT_INT64("Actual number of inserted edges :", inserted);
-  PRINT_STAT_INT64("Cross partition for last iteration :", diffPartitions);
+
+  int64_t* halfSize=firstPart, *fullSize;
+  for(int64_t b=0;b<nbatch; b++){
+    if (extraInfo[b].graphSizeDoubled){
+      fullSize=extraInfo[b].partAfterDoubling;
+      extraInfo[b].nvOverlapDouble  =  compPartitions(S,nv, halfSize,fullSize);
+      extraInfo[b].nvOverlapLast    =  compPartitions(S,nv, fullSize,lastPart);
+      halfSize=fullSize;
+    }
+  }
+  prettyPrint(extraInfo,nbatch,nv,currentNe,npartitions);
 
   for(int64_t b=0;b<nbatch; b++){
     if(extraInfo[b].graphSizeDoubled)
@@ -425,6 +375,103 @@ int64_t compPartitions(struct stinger* GSting, const  int64_t nv, int64_t* verPa
 }
 
 
+
+void usage (FILE * out, char *progname)
+{
+  fprintf (out,
+           "%s [--batch-size|-b #] [--nbatch|-n #] [--partitions|-p #] [graph-name.bin] [action-stream.bin]\n"
+           "\tDefaults:\n"
+           "\t   Batch size, default vale = %d\n"
+           "\t   Number of batches, default vale = %d\n"
+           "\t   Number of partitions, default vale = %d\n"
+           "\t   stinger graph name, default vale = \"%s\"\n"
+           "\t   stinger actions stream name, default vale = \"%s\"\n",
+           progname,
+           BATCH_SIZE_DEFAULT,
+           NBATCH_DEFAULT,
+           PARTITIONS_DEFAULT, 
+           INITIAL_GRAPH_NAME_DEFAULT,
+           ACTION_STREAM_NAME_DEFAULT);
+}
+
+/**
+* @brief Parses command line arguments.
+*
+* Parses the command line input as given by usage().  Batch size, number of
+* batches, initial graph filename, and action stream filename are given by
+* to the caller if they were specified on the command line.
+*
+* @param argc The number of arguments
+* @param argv[] The array of arguments
+* @param initial_graph_name Path/filename of the initial input graph on disk
+* @param action_stream_name Path/filename of the action stream on disk
+* @param batch_size Number of edge actions to consider in one batch
+* @param nbatch Number of batchs to process
+* @param num_partition Number of batchs to process
+*/
+void parse_args_streaming_partitions (const int argc, char *argv[], char ** graph_name,
+    char **action_name, int64_t* batch_num, int64_t* batch_size, int64_t* num_partitions) {
+  int k = 1;
+  int seenPartition=0, seenBatchSize=0, seenNumBatches=0;
+  if (k >= argc)
+    return;
+  while (k < argc && argv[k][0] == '-') {
+    if (0 == strcmp (argv[k], "--percentage") || 0 == strcmp (argv[k], "-p")) {
+      if (seenPartition)
+        goto err;
+      seenPartition = 1;
+      ++k;
+      if (k >= argc)
+        goto err;
+      *num_partitions = strtol (argv[k], NULL,10) ;
+      if (*num_partitions<=1)
+        goto err;
+      ++k;
+    } 
+    else if (0 == strcmp (argv[k], "--batch-size") || 0 == strcmp (argv[k], "-b")) {
+      if (seenBatchSize)
+        goto err;
+      seenBatchSize = 1;
+      ++k;
+      if (k >= argc)
+        goto err;
+      *batch_size = strtol (argv[k], NULL,10);
+      if (*batch_size<1)
+        goto err;
+      ++k;
+    } 
+    else if (0 == strcmp (argv[k], "--nbatch") || 0 == strcmp (argv[k], "-n")) {
+      if (seenNumBatches)
+        goto err;
+      seenNumBatches = 1;
+      ++k;
+      if (k >= argc)
+        goto err;
+      *batch_num = strtol (argv[k], NULL,10);
+      if (*batch_num<0)
+        goto err;
+      ++k;
+    }     
+    else if (0 == strcmp (argv[k], "--help")
+             || 0 == strcmp (argv[k], "-h") || 0 == strcmp (argv[k], "-?")) {
+      usage (stdout, argv[0]);
+      exit (EXIT_SUCCESS);
+      return;
+    } else if (0 == strcmp (argv[k], "--")) {
+      ++k;
+      break;
+    }
+  }
+  if (k < argc)
+    *graph_name = argv[k++];
+  if (k < argc)
+    *action_name = argv[k++];
+  return;
+ err:
+  usage (stderr, argv[0]);
+  exit (EXIT_FAILURE);
+  return;
+}
 
 
 
