@@ -81,18 +81,19 @@ void partitionStinger(struct stinger* GSting, const  int64_t nv,const  int64_t n
 
 
 void printHeader(){
-    printf("%s,","vertices");
-    printf("%s,","edges");
-    printf("%s,","partitions");
-    printf("%s,","before-diff");
-    printf("%s,","after-diff");
-    printf("%s,","batch-size");
-    printf("%s,","inserted-edges");
-    printf("%s,","edge-ratio");
-    printf("%s,","overlap-first");
-    printf("%s,","overlap-prev");
-    printf("%s,","overlap-double");
-    printf("%s,","overlap-last");
+    printf("%s","batch-id");
+    printf("%s","vertices");
+    printf(",%s","edges");
+    printf(",%s","partitions");
+    printf(",%s","before-diff");
+    printf(",%s","after-diff");
+    printf(",%s","batch-size");
+    printf(",%s","inserted-edges");
+    printf(",%s","edge-ratio");
+    printf(",%s","overlap-first");
+    printf(",%s","overlap-prev");
+    printf(",%s","overlap-double");
+    printf(",%s","overlap-last");
     printf("\n");
 }
 
@@ -105,21 +106,22 @@ void prettyPrint(iterationInfo* extraInfo, int64_t nbatch, int64_t nv, int64_t n
 
   nv--;
   for(int64_t b=0;b<nbatch; b++){
-    printf("%11ld, ",nv);
-    printf("%11ld, ",extraInfo[b].edgesInGraph);
-    printf("%11ld, ",npartitions);
-    printf("%11ld, ",extraInfo[b].diffPartBefore);
-    printf("%11ld, ",extraInfo[b].diffPartAfter);
-    printf("%11ld, ",extraInfo[b].batchSize);
-    printf("%11ld, ",extraInfo[b].insertedEdges);
+    printf("%11ld",b);
+    printf("%11ld",nv);
+    printf(",%11ld",extraInfo[b].edgesInGraph);
+    printf(",%11ld",npartitions);
+    printf(",%11ld",extraInfo[b].diffPartBefore);
+    printf(",%11ld",extraInfo[b].diffPartAfter);
+    printf(",%11ld",extraInfo[b].batchSize);
+    printf(",%11ld",extraInfo[b].insertedEdges);
 
-    printf("%1.10lf, ",(double)extraInfo[b].edgesInGraph/(double)ne);
+    printf(",%1.10lf",(double)extraInfo[b].edgesInGraph/(double)ne);
 
-    printf("%1.10lf, ",(double)extraInfo[b].nvOverlapFirst/(double)nv);
-    printf("%1.10lf, ",(double)extraInfo[b].nvOverlapPrevious/(double)nv);
+    printf(",%1.10lf",(double)extraInfo[b].nvOverlapFirst/(double)nv);
+    printf(",%1.10lf",(double)extraInfo[b].nvOverlapPrevious/(double)nv);
     if (extraInfo[b].graphSizeDoubled){
-      printf("%1.10lf, ",(double)extraInfo[b].nvOverlapDouble/(double)nv);
-      printf("%1.10lf, ",(double)extraInfo[b].nvOverlapLast/(double)nv);
+      printf(",%1.10lf",(double)extraInfo[b].nvOverlapDouble/(double)nv);
+      printf(",%1.10lf",(double)extraInfo[b].nvOverlapLast/(double)nv);
     }
     printf("\n");
   }
@@ -174,8 +176,7 @@ int main (const int argc, char *argv[]){
     int64_t *prevPart   = (int64_t*)malloc(nv*sizeof(int64_t));
     int64_t *lastPart   = (int64_t*)malloc(nv*sizeof(int64_t));
 
-    int64_t inserted=0,totalInserted=0;
-    int64_t batchId=0;
+    int64_t inserted=0,totalInserted=0, batchId=0, batchEdges=0;
 
     partitionStinger(S,nv, npartitions, firstPart);
     memcpy(prevPart,firstPart,nv*sizeof(int64_t));
@@ -188,6 +189,7 @@ int main (const int argc, char *argv[]){
       int64_t *actions = &action[2*actno];
       int64_t numActions = endact - actno;
       inserted=0;
+      batchEdges=0;
       // Adding the edges into the network 
       OMP("omp parallel for")
       for(uint64_t k = 0; k < endact - actno; k++) {
@@ -202,6 +204,8 @@ int main (const int argc, char *argv[]){
         	int val =stinger_insert_edge (S, 0, i, j, 1, actno+2);
         	val+=stinger_insert_edge (S, 0, j, i, 1, actno+2);
           __sync_add_and_fetch(&inserted,val); 
+          __sync_add_and_fetch(&batchEdges,1); 
+
         }
       }
 
@@ -229,7 +233,7 @@ int main (const int argc, char *argv[]){
       extraInfo[batchId].diffPartBefore=diffPartitionsBefore;
       extraInfo[batchId].diffPartAfter=diffPartitionsAfter;
       extraInfo[batchId].insertedEdges=inserted;
-      extraInfo[batchId].batchSize=batch_size;
+      extraInfo[batchId].batchSize=batchEdges;
       extraInfo[batchId].edgesInGraph = currentNe;
       extraInfo[batchId].nvOverlapPrevious    =  compPartitions(S,nv, prevPart,currPart);
       extraInfo[batchId].nvOverlapFirst =  compPartitions(S,nv, prevPart,firstPart);
