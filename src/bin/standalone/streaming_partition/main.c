@@ -69,6 +69,13 @@ typedef struct {
 
 } iterationInfo;
 
+typedef struct{
+  int64_t vertices;
+  int64_t edges;
+  int64_t interiorEdges;
+  int64_t exteriorEdges;
+
+} partitionInfo;
 
 int64_t compPartitions(struct stinger* GSting, const  int64_t nv, 
   int64_t* verPartitionBeforeArray, int64_t* verPartitionAfterArray);
@@ -77,6 +84,24 @@ void parse_args_streaming_partitions (const int argc, char *argv[], char ** grap
     char **action_name, int64_t* batch_num, int64_t* batch_size, int64_t* num_partitions);
 
 void partitionStinger(struct stinger* GSting, const  int64_t nv,const  int64_t numPart, int64_t* verPartitionArray);
+
+void collectPartitionInfo(struct stinger* GSting, const  int64_t nv,const  int64_t numPart, int64_t* verPartitionArray, partitionInfo* piInfo){
+  OMP("omp parallel for")
+  for (int64_t v=0; v<nv; v++){
+      int64_t partId=verPartitionArray[v];
+    __sync_add_and_fetch(&(piInfo[partId].vertices),1); 
+    STINGER_FORALL_EDGES_OF_VTX_BEGIN(GSting,v)
+      int64_t dest=STINGER_EDGE_DEST;
+      __sync_add_and_fetch(&(piInfo[partId].edges),1);
+      if(partId!=verPartitionArray[dest])
+        __sync_add_and_fetch(&(piInfo[partId].exteriorEdges),1);
+      else
+        __sync_add_and_fetch(&(piInfo[partId].interiorEdges),1);
+
+
+    STINGER_FORALL_EDGES_OF_VTX_END();
+  }
+}
 
 
 
@@ -161,10 +186,12 @@ int main (const int argc, char *argv[]){
   print_initial_graph_stats (nv, ne, batch_size, nbatch, naction);
 //    BATCH_SIZE_CHECK();
 
+  // Testing all the different partition counts
   for (int64_t part=0; part<partitionArrayLen; part++){
     npartitions=partitionArray[part];
     iterationInfo* extraInfo=(iterationInfo*)malloc(sizeof(iterationInfo)*nbatch);
-
+    partitionInfo* extraPartInfo=(partitionInfo*)malloc(sizeof(partitionInfo)*nbatch*npartitions);
+    memset(extraPartInfo,0,sizeof(partitionInfo)*nbatch*npartitions);
     int64_t initialNe=ne, currentNe=ne, lastDoubleNe=ne, doubledFlag=0, finalNe=ne+naction;
 
     /* Convert to STINGER */
@@ -178,9 +205,9 @@ int main (const int argc, char *argv[]){
 
     int64_t inserted=0,totalInserted=0, batchId=0, batchEdges=0;
 
+    // Partition the initially read graph before updating the graph.
     partitionStinger(S,nv, npartitions, firstPart);
     memcpy(prevPart,firstPart,nv*sizeof(int64_t));
-
 
     // Going through all the batches
     for (int64_t actno = 0; actno < nbatch * batch_size; actno += batch_size,batchId++){
@@ -190,6 +217,7 @@ int main (const int argc, char *argv[]){
       int64_t numActions = endact - actno;
       inserted=0;
       batchEdges=0;
+
       // Adding the edges into the network 
       OMP("omp parallel for")
       for(uint64_t k = 0; k < endact - actno; k++) {
@@ -208,11 +236,15 @@ int main (const int argc, char *argv[]){
 
         }
       }
-
+      // Partition the graph after current batch
       partitionStinger(S,nv, npartitions, currPart);
-      // Swapping partition arrays every iteration;
+
+      // 
+      collectPartitionInfo(S,nv,npartitions,currPart,extraPartInfo+batchId*npartitions);   
+      // Swapping partition arrays every iteration
       int64_t* temp;temp=prevPart;  prevPart=currPart; currPart=temp;
       
+      // Check how many of the edge insertions were accross partitions.
       OMP("omp parallel for")
       for(uint64_t k = 0; k < endact - actno; k++) {
         const int64_t i = actions[2 * k]; const int64_t j = actions[2 * k + 1];
@@ -221,8 +253,11 @@ int main (const int argc, char *argv[]){
         }
       }
 
+      // Store extra info for the current batch
+      // --------------------------------------
       currentNe+=inserted;
       extraInfo[batchId].graphSizeDoubled=0;
+      // Additional information is stored when graph doubles in size and for last iteration.
       if (currentNe > (2*lastDoubleNe) || batchId==(nbatch-1)){
         lastDoubleNe=currentNe;
         extraInfo[batchId].graphSizeDoubled=1;
@@ -241,8 +276,8 @@ int main (const int argc, char *argv[]){
     } /* End of batch */
 
     memcpy(lastPart,prevPart,nv*sizeof(int64_t));
-
-    int64_t diffPartitions=0,diffCsrPartitions=0;
+/*
+    int64_t diffPartitions=0;
     for (int64_t actno = 0; actno < nbatch * batch_size; actno += batch_size)  {
       const int64_t endact = (actno + batch_size > naction ? naction : actno + batch_size);
       int64_t *actions = &action[2*actno];
@@ -256,7 +291,7 @@ int main (const int argc, char *argv[]){
         }
       }
     } 
-
+*/
     int64_t* halfSize=firstPart, *fullSize;
     for(int64_t b=0;b<nbatch; b++){
       if (extraInfo[b].graphSizeDoubled){
@@ -274,7 +309,7 @@ int main (const int argc, char *argv[]){
     }
 
     free(firstPart);  free(prevPart);  free(currPart);  free(lastPart); 
-    free(extraInfo);
+    free(extraInfo); free(extraPartInfo);
 
     stinger_free_all (S);
   }
