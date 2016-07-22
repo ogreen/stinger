@@ -58,8 +58,8 @@ main (int argc, char *argv[])
 
     /* Post processing */
     if(stinger_alg_begin_post(alg)) {
-	  stinger_scc_deletion(alg->stinger,alg->stinger->max_nv,scc_internal,&stats,alg->deletions,alg->num_deletions);
 	  stinger_scc_insertion(alg->stinger,alg->stinger->max_nv,scc_internal,&stats,alg->insertions,alg->num_insertions);
+	  stinger_scc_deletion(alg->stinger,alg->stinger->max_nv,scc_internal,&stats,alg->deletions,alg->num_deletions);
 
 	  stinger_scc_copy_component_array(scc_internal,alg->alg_data);
 
