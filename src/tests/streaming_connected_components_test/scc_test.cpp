@@ -43,18 +43,18 @@ TEST_F(SCCTest, UndirectedGraph) {
   stinger_connected_components_stats stats;
   stinger_scc_reset_stats(&stats);
 
-  const int batch_size = 2;
-  int64_t batch[batch_size*2];
-  batch[0] = 3;
-  batch[1] = 8;
-  batch[2] = 1;
-  batch[3] = 2;
-  stinger_insert_edge_pair(S, 0, batch[0], batch[1], 1, 2);
-  stinger_remove_edge_pair(S, 0, batch[2], batch[3]);
-  batch[2] = ~1;// stinger_scc_updates requires that deletions be marked by their logical-OR (~)
-  batch[3] = ~2;
+  stinger_edge_update insertion,deletion;
+  insertion.source       = 3;
+  insertion.destination  = 8;
+  deletion.source        = 1;
+  deletion.destination   = 2;
 
-  stinger_scc_update(S,nv,scc_internal,&stats,batch,batch_size);
+  stinger_insert_edge_pair(S, 0, insertion.source, insertion.destination, 1, 2);
+  stinger_remove_edge_pair(S, 0, deletion.source, deletion.destination);
+
+  stinger_scc_insertion(S,nv,scc_internal,&stats,&insertion,1);
+  stinger_scc_deletion(S,nv,scc_internal,&stats,&deletion,1);
+
   const int64_t* actual_components = stinger_scc_get_components(scc_internal);
 
   int64_t* expected_components = (int64_t*)malloc(sizeof(int64_t)*nv);
@@ -103,19 +103,18 @@ TEST_F(SCCTest, UndirectedGraphDumbbell) {
   stinger_connected_components_stats stats;
   stinger_scc_reset_stats(&stats);
 
-  const int batch_size = 2;
-  int64_t batch[batch_size*2];
-  batch[0] = 6;
-  batch[1] = 7;
-  batch[2] = 3;
-  batch[3] = 4;
+  stinger_edge_update insertion,deletion;
+  insertion.source       = 6;
+  insertion.destination  = 7;
+  deletion.source        = 3;
+  deletion.destination   = 4;
 
-  stinger_insert_edge_pair(S, 0, batch[0], batch[1], 1, 2);
-  stinger_remove_edge_pair(S, 0, batch[2], batch[3]);
-  batch[2] = ~3;// stinger_scc_updates requires that deletions be marked by their logical-OR (~)
-  batch[3] = ~4;
+  stinger_insert_edge_pair(S, 0, insertion.source, insertion.destination, 1, 2);
+  stinger_remove_edge_pair(S, 0, deletion.source, deletion.destination);
 
-  stinger_scc_update(S,nv,scc_internal,&stats,batch,batch_size);
+  stinger_scc_insertion(S,nv,scc_internal,&stats,&insertion,1);
+  stinger_scc_deletion(S,nv,scc_internal,&stats,&deletion,1);
+
   const int64_t* actual_components = stinger_scc_get_components(scc_internal);
 
   int64_t* expected_components = (int64_t*)malloc(sizeof(int64_t)*nv);

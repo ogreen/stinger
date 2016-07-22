@@ -13,6 +13,8 @@
 #include "stinger_core/stinger.h"
 #include "stinger_utils/timer.h"
 #include "stinger_core/xmalloc.h"
+#include "stinger_net/stinger_alg.h"
+
 
 typedef struct {
 	uint64_t bfs_deletes_in_tree;
@@ -39,6 +41,7 @@ typedef struct{
 	int64_t * bfs_components;
 	int64_t * bfs_component_sizes;
 
+	int64_t   nv;
 	int64_t   parentsPerVertex;
 	int64_t   initCCCount;
 } stinger_scc_internal;
@@ -55,10 +58,20 @@ void stinger_scc_release_internals(stinger_scc_internal* scc_internal);
 void stinger_scc_reset_stats(stinger_connected_components_stats* stats);
 
 // Update the streaming connected components with a batch of updates.
-int stinger_scc_update(struct stinger * S, int64_t nv,  stinger_scc_internal scc_internal, 
-	stinger_connected_components_stats* stats, int64_t *batch,int64_t batch_size);
+// int stinger_scc_update(struct stinger * S, int64_t nv,  stinger_scc_internal scc_internal, 
+// 	stinger_connected_components_stats* stats, stinger_edge_update* batch,int64_t batch_size, int64_t isInsertion);
+// 	// stinger_connected_components_stats* stats, int64_t *batch,int64_t batch_size);
+
+int stinger_scc_insertion(struct stinger * S, int64_t nv,  stinger_scc_internal scc_internal, 
+	stinger_connected_components_stats* stats, stinger_edge_update* batch,int64_t batch_size);
+
+int stinger_scc_deletion(struct stinger * S, int64_t nv,  stinger_scc_internal scc_internal, 
+	stinger_connected_components_stats* stats, stinger_edge_update* batch,int64_t batch_size);
+
 
 // Gets the connected component mapping of the dynamic graph algorithm.
 const int64_t* stinger_scc_get_components(stinger_scc_internal scc_internal);
+
+void stinger_scc_copy_component_array(stinger_scc_internal scc_internal,int64_t* destArray);
 
 #endif
